@@ -45,11 +45,11 @@ sum_z_sq <- function(y,z,n,alphah) {
   return(sum+1)
 }
 
-SGD <- function(X, y) {
+SGD <- function(X, y, k) {
   theta_hat <- OLSE(X,y)
   alpha_hat <- alpha_mle(y, X%*%theta_hat, length(y))
   print(alpha_hat)
-  for(i in 1:10){
+  for(i in 1:k){
     y_t <- X%*%theta_hat + (2/C(alpha_hat))*R(y,X%*%theta_hat, length(y),alpha_hat)
     theta_hat <- OLSE(X,y_t)
     alpha_hat <- (alpha_hat*sum_z_sq(y,X%*%theta_hat, length(y),alpha_hat))/2
@@ -74,13 +74,13 @@ initial_estimate <-function(X,y,delta) {
   idx_obs <- to_vec(for(i in 1:n) if(delta[i]==0) i)
   X_obs <- X[idx_obs,]
   y_obs <- y[idx_obs]
-  return(SGD(X_obs, y_obs))
+  return(SGD(X_obs, y_obs,10))
 }
 
 t <- exp(X%*%theta)
-v <- rnorm(n,0,(0.25/(alpha^2)))
+v <- rnorm(n,0,0.5*alpha)
 y <- log(to_vec(for(i in 1:n) (t[i]*(1+2*(v[i]^2)+2*v[i]*sqrt(1+v[i]^2)))))
-c <- exp(crvalue + sqrt(2)*rnorm(n, 0, 1))
+c <- crvalue + sqrt(2)*rnorm(n, 0, 1)
 delta <- seq(0,0,length.out = n)
 
 for (i in 1:n) {
@@ -92,18 +92,22 @@ for (i in 1:n) {
 
 res <- initial_estimate(X,y,delta)
 
-sample_z <- function(x,y,theta,alpha,c){
-  while(1){
-    v <- rnorm(1,0,(0.25/(alpha^2)))
-    y <- (x%*%theta)[1][1] + log(1 + 2*v^2 + 2*v*sqrt(1+v^2))
-    if(y>=c){
-      print(y,c)
-      return(y)
-    }
+sample_z <- function(x,y,theta_h,alpha,c){
+  u <- runif(1)
+  z <- exp(c-((x%*%theta_h)[1,1]))
+  z <- (z-1)/(2*sqrt(z))
+  b <- u + (1-u)*pnorm(z,0,(0.5*alpha))
+  res <- qnorm(b,0,(0.5*alpha))
+  if (is.infinite(res)) {
+    res <- 6
   }
+  print(res)
+  return(res)
+
 }
+
 print(n)
-for (i in 1:1) {
+for (i in 1:2) {
   for(j in 1:n){
     if(delta[j]==1){
       y[j]<-sample_z(X[j,],y[j],res[["theta"]],res[["alpha"]],c[j])
@@ -111,5 +115,5 @@ for (i in 1:1) {
   }
   
   print(y)
-  res <- SGD(X,y)
+  res <- SGD(X,y,3)
 }

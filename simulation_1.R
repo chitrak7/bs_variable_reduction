@@ -41,7 +41,7 @@ R <- function(y,z,n,alpha){
 }
 
 sum_z_sq <- function(y,z,n,alphah) {
-  sum = sum(to_vec(for(i in 1:n)((4/alphah^2)*(sinh(0.5*(y[i]-z[i]))*sinh(0.5*(y[i]-z[i]))))))/n
+  sum = sum(to_vec(for(i in 1:n)((4/alphah^2)*(sinh(0.5*(y[i]-z[i]))^2))))/n
   return(sum+1)
 }
 
@@ -61,7 +61,7 @@ SGD <- function(X, y, k) {
 n = 100
 alpha = 0.5
 p = 204
-crvalue = 1
+crvalue = 3
 theta = c(c(1.5,5,3,2,-0.5), seq(0,0,length.out = 200))
 set.seed(124)
 
@@ -74,7 +74,7 @@ initial_estimate <-function(X,y,delta) {
   idx_obs <- to_vec(for(i in 1:n) if(delta[i]==0) i)
   X_obs <- X[idx_obs,]
   y_obs <- y[idx_obs]
-  return(SGD(X_obs, y_obs,10))
+  return(SGD(X_obs, y_obs,100))
 }
 
 t <- exp(X%*%theta)
@@ -93,27 +93,35 @@ for (i in 1:n) {
 res <- initial_estimate(X,y,delta)
 
 sample_z <- function(x,y,theta_h,alpha,c){
-  u <- runif(1)
-  z <- exp(c-((x%*%theta_h)[1,1]))
-  z <- (z-1)/(2*sqrt(z))
-  b <- u + (1-u)*pnorm(z,0,(0.5*alpha))
-  res <- qnorm(b,0,(0.5*alpha))
-  if (is.infinite(res)) {
-    res <- 6
+  i=40;
+  while(i){
+    i = i-1;
+    v <- rnorm(1,0,0.5*alpha)
+    z <- x%*%theta_h + log(1+2*v^2+2*v*sqrt(1+v^2))
+    if(z[1,1]>c){
+      return(z[1,1])
+    }
   }
-  print(res)
-  return(res)
-
+  return(Inf)
 }
 
 print(n)
-for (i in 1:2) {
+
+for (i in 1:20) {
+  idx <- c()
   for(j in 1:n){
     if(delta[j]==1){
-      y[j]<-sample_z(X[j,],y[j],res[["theta"]],res[["alpha"]],c[j])
+      sample<-sample_z(X[j,],y[j],res[["theta"]],res[["alpha"]],c[j])
+      if(!is.infinite(sample)){
+        y[j] = sample
+        idx <-c(idx,c(j))
+      }
+    } else {
+      idx <- c(idx,c(j))
     }
   }
-  
-  print(y)
-  res <- SGD(X,y,3)
+  X_obs <- X[idx,]
+  y_obs <- y[idx]
+  print("Resampling and recomputing")
+  res <- SGD(X_obs,y_obs,10)
 }

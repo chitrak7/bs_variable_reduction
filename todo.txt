@@ -1,0 +1,8 @@
+function of alpha dependence of result
+do not update y, just check it to check benefit
+also check for multiple value of alpha>2 (bimodality)
+p overestimation
+sd in theta and alpha
+variance with alpha and beta
+
+em in geometric skew normal

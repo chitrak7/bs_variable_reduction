@@ -14,7 +14,7 @@ OLSE <- function(X, y) {
   
   res <- cv.glmnet(X, y, family="gaussian",penalty.factor=c(0,rep(1,p-1)))
   lambda_min = res$lambda.min
-  res <- glmnet(X, y, family = "gaussian", lambda = lambda_min, alpha=alpha_min,penalty.factor=c(0,rep(1,p)))
+  res <- glmnet(X, y, family = "gaussian", lambda = lambda_min, alpha=alpha_min,penalty.factor=c(0,rep(1,p-1)))
   return(as.numeric(coef(res)))
 }
 
@@ -41,12 +41,8 @@ sum_z_sq <- function(y,z,n,alphah) {
 }
 
 SGD <- function(X, y, k, theta_hat, alpha_hat) {
-  if(alpha_hat==0) {
-    theta_hat <- OLSE(X,y)
-    alpha_hat <- alpha_mle(y, X%*%theta_hat, length(y))
-  } else {
-    alpha_hat <- alpha_mle(y, X%*%theta_hat, length(y))
-  }
+  theta_hat <- OLSE(X,y)
+  alpha_hat <- alpha_mle(y, X%*%theta_hat, length(y))
   
   for(i in 1:k){
     y_t <- X%*%theta_hat + (2/C(alpha_hat))*R(y,X%*%theta_hat, length(y),alpha_hat)
@@ -90,10 +86,11 @@ sample_z <- function(x,y,theta_h,alpha,c){
 
 n = 50
 alpha = 0.5
-crvalue = 3
+crvalue = 10
 theta = c(c(1.5,5,3,2,-0.5), seq(0,0,length.out = 200))
 fres = matrix(nrow=0,ncol=206)
-for(kk in 1:100){
+simu=10
+for(kk in 1:simu){
   set.seed(kk)
   X=matrix(nrow = p, ncol = n)      #generate X
   X[1,]=rep(1,n)
@@ -140,3 +137,13 @@ for(kk in 1:100){
   print(res[["alpha"]])
   fres = rbind(fres, c(c(res["alpha"]), c(res[["theta"]])))
 }
+print(fres)
+fres <- matrix(unlist(fres), nrow=simu, ncol=p+1)
+print("Mean")
+print(apply(fres,2,mean))
+print("Variance")
+print(apply(fres,2,sd))
+fmean <- apply(fres,2,mean)
+original <- c(c(alpha), theta)
+print("Bias")
+print((fmean-original)/original)

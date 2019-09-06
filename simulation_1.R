@@ -46,12 +46,13 @@ SGD <- function(X, y, k, theta_hat, alpha_hat) {
   
   for(i in 1:k){
     y_t <- X%*%theta_hat + (2/C(alpha_hat))*R(y,X%*%theta_hat, length(y),alpha_hat)
-    theta_hat <- OLSE(X,y_t)
+    
     ttt <- sum_z_sq(y,X%*%theta_hat, length(y),alpha_hat)
-    if(ttt>=4 && alpha_hat>=3){
+    if(ttt>=4){
       print("broken")
       break
     }
+    theta_hat <- OLSE(X,y_t)
     alpha_hat <- (ttt*alpha_hat)/2
   }
   return(list("theta"=theta_hat,"alpha"=alpha_hat))
@@ -85,11 +86,13 @@ sample_z <- function(x,y,theta_h,alpha,c){
 }
 
 n = 50
-alpha = 0.5
-crvalue = 10
+alpha = 1.5
+crvalue = 3
 theta = c(c(1.5,5,3,2,-0.5), seq(0,0,length.out = 200))
-fres = matrix(nrow=0,ncol=206)
 simu=10
+fres = matrix(0,nrow=simu,ncol=206)
+iters=300
+burnin=200
 for(kk in 1:simu){
   set.seed(kk)
   X=matrix(nrow = p, ncol = n)      #generate X
@@ -114,8 +117,8 @@ for(kk in 1:simu){
   }
   res <- initial_estimate(X,y,delta)
   
-  
-  for (i in 1:300) {
+  estt = matrix(0,nrow=iters-burnin, ncol=p+1)
+  for (i in 1:iters) {
     idx <- c()
     for(j in 1:n){
       if(delta[j]==1){
@@ -130,12 +133,19 @@ for(kk in 1:simu){
     }
     X_obs <- X[idx,]
     y_obs <- y[idx]
-    res <- SGD(X_obs,y_obs,10,res[["theta"]],res[["alpha"]])
+    res <- SGD(X_obs,y_obs,5,res[["theta"]],res[["alpha"]])
+    if(i>burnin){
+      estt[i-burnin,] = c(res[["alpha"]],res[["theta"]])
+    }
   }
+  Pzero=apply(estt,2,nnzero)/(iters-burnin)
+  zvalue=(Pzero-0.5)*(iters-burnin)/0.5
+  pvalue=pnorm(zvalue)
+  adj.pv=p.adjust(pvalue, "BH")    #Control false discovery rate;
+  estt[,which(adj.pv<=0.05)] <- 0
   printf("final values in %dth iteration\n",kk)
-  print(res[["theta"]])
-  print(res[["alpha"]])
-  fres = rbind(fres, c(c(res["alpha"]), c(res[["theta"]])))
+  fres[kk, ] = apply(estt,2,sum)/(iters-burnin)
+  print(fres[kk,])
 }
 print(fres)
 fres <- matrix(unlist(fres), nrow=simu, ncol=p+1)
@@ -143,6 +153,8 @@ print("Mean")
 print(apply(fres,2,mean))
 print("Variance")
 print(apply(fres,2,sd))
+print("Over Estimation")
+print(apply(fres, 1, function(c)sum(c!=0))-6)
 fmean <- apply(fres,2,mean)
 original <- c(c(alpha), theta)
 print("Bias")

@@ -6,3 +6,8 @@ sd in theta and alpha
 variance with alpha and beta
 
 em in geometric skew normal
+
+
+7/9/19
+stabilise using tranformation s.t c1*log(d1) nd c2*(logd2) have same varieance.
+

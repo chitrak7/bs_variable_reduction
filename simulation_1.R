@@ -86,8 +86,8 @@ sample_z <- function(x,y,theta_h,alpha,c){
 }
 
 n = 50
-alpha = 1.5
-crvalue = 3
+alpha = 0.5
+crvalue = 10
 theta = c(c(1.5,5,3,2,-0.5), seq(0,0,length.out = 200))
 simu=10
 fres = matrix(0,nrow=simu,ncol=206)
@@ -103,9 +103,11 @@ for(kk in 1:simu){
     X[i,]=rnorm(n,0,2)
   }
   X <- t(X)
-  t <- exp(X%*%theta)
+  t <- X%*%theta
   v <- rnorm(n,0,0.5*alpha)
-  y <- log(to_vec(for(i in 1:n) (t[i]*(1+2*(v[i]^2)+2*v[i]*sqrt(1+v[i]^2)))))
+  z <- log(to_vec(for(i in 1:n) ((1+2*(v[i]^2)+2*v[i]*sqrt(1+v[i]^2)))))
+  z = z/sd(z)
+  y <- t + z
   c <- crvalue + sqrt(2)*rnorm(n, 0, 1)
   delta <- seq(0,0,length.out = n)
 

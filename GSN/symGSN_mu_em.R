@@ -5,7 +5,8 @@ library(glmnet)
 library(R.utils)
 
 
-OLSE <- function(X, y,D) {
+OLSE <- function(X, y,D,m,mu,n) {
+  y = y - m*rep(mu,n)
   a = t(X)%*%D%*%X
   b = inv(a)%*%t(X)%*%D%*%y
   return(b)
@@ -15,13 +16,18 @@ estimate_p <-function(n,K){
   return(n/K)
 }
 
-estimate_sigma <-function(X,y,D,n,theta_est) {
-  a = y - X%*%theta_est
+estimate_mu <- function(y, X, theta, m) {
+  a = y - X%*%theta 
+  return(sum(a)/sum(m))
+}
+
+estimate_sigma <-function(X,y,D,n,theta_est,mu) {
+  a = y - X%*%theta_est -m*rep(mu,n)
   b = sqrt((t(a)%*%D%*%a)/n)
   return(b)
 }
 
-estimate_m<-function(X,y,theta,var,n,p){
+estimate_m<-function(X,y,theta,var,n,p,mu){
   mx <- 100
   t <- X%*%theta
   m <- rep(0,n)
@@ -31,7 +37,7 @@ estimate_m<-function(X,y,theta,var,n,p){
   rng_rt <- sqrt(rng)
   y <- y - t
   for(i in 1:n){
-    dist = dnorm(y[i], 0, rng_rt*rep(var,mx))
+    dist = dnorm(y[i], rng*rep(mu,mx), rng_rt*rep(var,mx))
     m[i] = sum(p_arr*rng*dist)/sum(p_arr*dist)
     d[i] = sum((p_arr*dist)/rng)/sum(p_arr*dist)
   }
@@ -39,24 +45,24 @@ estimate_m<-function(X,y,theta,var,n,p){
 }
 
 p=5
-n = 1000
+n = 50
 crvalue = 3
 theta = c(c(1.5,5,3,2,-0.5), rep(0,p-5))
 sigma=1
-simu=20
-g_p=0.50
+simu=10
+g_p=0.25
 iters=1000
 burnin=200
-fres = matrix(0,nrow=simu,ncol=p+2)
+fres = matrix(0,nrow=simu,ncol=p+3)
 
 for(kk in 1:simu){
   print(kk)
   set.seed(kk)
   m =rgeom(n,g_p) +1
   em = sum(m)/n
+  mu=10
   X=matrix(nrow = p, ncol = n)      #generate X
-  X[1,]=rep(1,n)
-  for(i in 2:p)
+  for(i in 1:p)
   {                                   
     # X[i+1,]=rnorm(n,i,2)    #Normalize X so that E(X)=0 and comptation for the intercept is stable;
     X[i,]=rnorm(n,0,2)
@@ -65,27 +71,33 @@ for(kk in 1:simu){
   t<-X%*%theta
   y <- rep(1,n)
   for(i in 1:n){
-    y[i] = t[i] + rnorm(1,0, sqrt(m[i])*sigma)
+    y[i] = t[i] + rnorm(1,mu*m[i], sqrt(m[i])*sigma)
   }
   
   D = diag(n)
-  theta_hat <- OLSE(X,y,D)
+  m=rep(1,n)
+  mu_hat=5
+  theta_hat <- OLSE(X,y,D,m,mu_hat,n)
+  print(theta_hat)
   p_hat <- 0.5
-  sigma_hat <- estimate_sigma(X,y,D,n,theta_hat)
+  sigma_hat <- estimate_sigma(X,y,D,n,theta_hat,mu_hat)
   print(sigma_hat)
-  estt = matrix(0,nrow=iters-burnin, ncol=p+2)
+  estt = matrix(0,nrow=iters-burnin, ncol=p+3)
   for(i in 1:iters){
-    res <- estimate_m(X,y,theta_hat,sigma_hat,n,p_hat)
+    res <- estimate_m(X,y,theta_hat,sigma_hat,n,p_hat,mu_hat)
     m <- res$m 
     d <- res$d
     for(j in 1:n){
       D[j,j] = d[j]
     }
-    theta_hat <- OLSE(X,y,D)
+    theta_hat <- OLSE(X,y,D,m,mu_hat,n)
     p_hat     <- estimate_p(n, sum(m))
-    sigma_hat <- estimate_sigma(X,y,D,n,theta_hat)
+    mu_hat    <- estimate_mu(y,X,theta_hat,m)
+    sigma_hat <- estimate_sigma(X,y,D,n,theta_hat,mu_hat)
+    if(i<10)
+    print(c(p_hat, sigma_hat, mu_hat,theta_hat))
     if(i>burnin){
-      estt[i-burnin,] = c(p_hat, sigma_hat, theta_hat)
+      estt[i-burnin,] = c(p_hat, sigma_hat, mu_hat,theta_hat)
     }
   }
   fres[kk, ] = apply(estt,2,mean)

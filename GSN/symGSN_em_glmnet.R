@@ -5,10 +5,14 @@ library(glmnet)
 library(R.utils)
 
 
+p=200
 OLSE <- function(X, y,D) {
-  a = t(X)%*%D%*%X
-  b = inv(a)%*%t(X)%*%D%*%y
-  return(b)
+  X = X[,2:p]
+  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==1),weights=D,alpha=1)
+  lambda_min = res$lambda.min
+  res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda = 0.1, alpha=1, weights=D)
+  beta = as.numeric(coef(res))
+  return(beta)
 }
 
 estimate_p <-function(n,K){
@@ -38,12 +42,11 @@ estimate_m<-function(X,y,theta,var,n,p){
   return(list("m"=m,"d"=d))
 }
 
-p=5
-n = 1000
+n = 100
 crvalue = 3
 theta = c(c(1.5,5,3,2,-0.5), rep(0,p-5))
 sigma=1
-simu=20
+simu=100
 g_p=0.50
 iters=1000
 burnin=200
@@ -69,8 +72,10 @@ for(kk in 1:simu){
   }
   
   D = diag(n)
-  theta_hat <- OLSE(X,y,D)
+  d = rep(1,n)
+  theta_hat <- OLSE(X,y,d)
   p_hat <- 0.5
+  print(theta_hat)
   sigma_hat <- estimate_sigma(X,y,D,n,theta_hat)
   print(sigma_hat)
   estt = matrix(0,nrow=iters-burnin, ncol=p+2)
@@ -81,11 +86,13 @@ for(kk in 1:simu){
     for(j in 1:n){
       D[j,j] = d[j]
     }
-    theta_hat <- OLSE(X,y,D)
+    theta_hat <- OLSE(X,y,d)
     p_hat     <- estimate_p(n, sum(m))
     sigma_hat <- estimate_sigma(X,y,D,n,theta_hat)
+    print(c(p_hat, sigma_hat, theta_hat[1:5]))
     if(i>burnin){
       estt[i-burnin,] = c(p_hat, sigma_hat, theta_hat)
+      
     }
   }
   fres[kk, ] = apply(estt,2,mean)

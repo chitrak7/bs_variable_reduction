@@ -7,10 +7,11 @@ library(R.utils)
 p=200
 
 OLSE1 <- function(X, y) {
-  y = y
   res <- cv.glmnet(X, y, family="gaussian",intercept=(1==1),alpha=1)
   lambda_min = res$lambda.min
-  res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda = 0.1, alpha=1)
+  res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda = lambda_min, alpha=1)
+  print(lambda_min)
+  print(as.numeric(coef(res)))
   return(res)
 }
 
@@ -18,7 +19,7 @@ OLSE <- function(X, y,D,m,mu,n) {
   y = y - m*rep(mu,n)
   res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),weights=D,alpha=1)
   lambda_min = res$lambda.min
-  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = 0.1, alpha=1, weights=D)
+  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=1, weights=D)
   beta = as.numeric(coef(res))
   return(beta[1:p+1])
 }
@@ -61,35 +62,49 @@ log_likelihood <- function(X,y,p,mu,n){
   D = diag(d)
   theta = OLSE(X,y,d,m,mu,n)
   sigma = estimate_sigma(X,y,D,n,theta,mu)
+  res <- estimate_m(X,y,theta,sigma,n,p,mu)
+  m = res$m
+  D = diag(res$d)
   sm = n*log(p) + sum(m-rep(1,n))*log(1-p) - n*log(sigma) - 0.5*sum(log(m))
   y = y - X%*%theta - rep(mu,n)*m
-  sm = sm - ((t(y)%*%y)*p)/(2*(sigma^2))
+  sm = sm - ((t(y)%*%D%*%y))/(2*(sigma^2))
   return(sm)
 }
 
 initial_estimate<-function(X,y,n){
   res <- OLSE1(X,y)
   theta_full <- as.numeric(coef(res))
-  p_r = seq(0.1,1,by=0.1)
-  mu_r = rep(theta_full[1],10)*p_r
+  p_r = seq(0.05,0.91,by=0.05)
+  mu_r = rep(theta_full[1],18)*p_r
   prd = predict.glmnet(res,X)
-  ll = rep(0,10)
-  for(i in 1:10){
+  ll = rep(0,18)
+  for(i in 1:18){
     ll[i] = log_likelihood(X,y,p_r[i],mu_r[i],n)
     print(i)
   }
   print(ll)
-  i <- which.max(ll)
-  res <- estimate_m_z(z,p_r[i],mu_r[i],var,n)
-  m = res$m
-  D = res$d
-  theta_hat <- OLSE(X,y,D,m,mu_r[i],n)
-  print(theta_hat)
-  print(mu_r[i])
-  print(p_r[i])
-  sigma_hat <- estimate_sigma(X,y,D,n,theta_hat,mu_r[i])
-  x <- list("mu"=mu_r[i], "theta"=theta_hat, "sigma"=sigma_hat, "p"=p_r[i])
-  return(x)
+  i <- which.max(ll)g_p
+  p = p_r[i]
+  mu = mu_r[i]
+  m = rgeom(n,p)+1
+  d = 1/m
+  D = diag(d)
+  theta = OLSE(X,y,d,m,mu,n)
+  sigma = estimate_sigma(X,y,D,n,theta,mu)
+  res <- estimate_m(X,y,theta,sigma,n,p,mu)
+  m <- res$m
+  d <- res$d
+  D <- diag(d)
+  theta <- OLSE(X,y,d,m,mu,n)
+  sigma = estimate_sigma(X,y,D,n,theta,mu)
+  
+  print(theta)
+  print(mu)
+  print(p)
+  print(sigma)
+  print(m)
+  x <- list("mu"=mu, "theta"=theta, "sigma"=sigma, "p"=p)
+  #return(x)
 }
 
 initial_estimate2<-function(X,y,mu,n) {

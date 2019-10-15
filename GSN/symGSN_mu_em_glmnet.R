@@ -22,7 +22,7 @@ OLSE <- function(X, y,D,m,mu,n) {
   y = y - m*rep(mu,n)
   res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),weights=D,alpha=1)
   lambda_min = res$lambda.min
-  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = 0.1, alpha=1, weights=D)
+  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=1, weights=D)
   beta = as.numeric(coef(res))
   return(beta[1:p+1])
 }

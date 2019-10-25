@@ -89,8 +89,8 @@ for(kk in 1:simu){
   #m=rgeom(n,p_hat)+1
   d = 1/m
   D = diag(d)
-  mu_hat=1
-  theta_hat <- OLSE(X,y,d,m,mu_hat,n)
+  mu_hat=10
+  theta_hat <- OLSE(X,y,m,m,mu_hat,n)
   sigma_hat <- estimate_sigma(X,y,D,n,theta_hat,mu_hat)
   print(sigma_hat)
   estt = matrix(0,nrow=iters-burnin, ncol=p+3)

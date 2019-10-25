@@ -21,11 +21,13 @@ OLSE2 <- function(X, y) {
   return(beta[1:p+1])
 }
 
-OLSE <- function(X, y,D,m,mu,n) {
-  y <- y - m*rep(mu,n)
-  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),weights=D,alpha=1)
+OLSE <- function(X, y,d,m,mu,n) {
+  y <- y*sqrt(d)
+  X <- X*sqrt(d)
+  y <- y - rep(mu,n)*(1/sqrt(d))
+  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),alpha=1)
   lambda_min <- res$lambda.min
-  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=1, weights=D)
+  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=1)
   beta <- as.numeric(coef(res))
   return(beta[1:p+1])
 }
@@ -39,10 +41,10 @@ estimate_mu <- function(y, X, theta, m) {
   return(sum(a)/sum(m))
 }
 
-estimate_sigma <-function(X,y,D,m,n,theta_est,mu) {
-  a <- y - X%*%theta_est -m*rep(mu,n)
-  b <- sqrt((t(a)%*%D%*%a)/n)
-  return(b)
+estimate_sigma <-function(X,y,d,m,n,theta_est,mu) {
+  a <- y - X%*%theta_est 
+  res <- sum(a*a*d) - 2*sum(a*rep(mu,n)) + sum(m*rep(mu^2, n)) 
+  return(sqrt(res/n))
 }
 
 estimate_m_conf <- function(X,y,theta,var,n,p,mu,m) {
@@ -74,6 +76,7 @@ estimate_m<-function(X,y,theta,var,n,p,mu){
   t <- X%*%theta
   m <- rep(0,n)
   d <- rep(0,n)
+  l <- rep(0,n)
   rng <- 1:mx
   p_arr <- (1-p)^(rng-1)
   rng_rt <- sqrt(rng)
@@ -82,36 +85,33 @@ estimate_m<-function(X,y,theta,var,n,p,mu){
     dist <- dnorm(y[i], rng*rep(mu,mx), rng_rt*rep(var,mx))
     m[i] <- sum(p_arr*rng*dist)/sum(p_arr*dist)
     d[i] <- sum((p_arr*dist)/rng)/sum(p_arr*dist)
+    l[i] <- sum((p_arr*dist)*log(rng))/sum(p_arr*dist)
   }
   return(list("m"=m,"d"=d))
 }
 
-log_likelihood <- function(X,y,theta,p,mu,n){
-  z <- y - X%*%theta
-  m <- round(z/mu)
-  for(i in 1:n){
-    if(m[i]<1){
-      m[i]<-1
-    }
-  }
-  m <-c(m) 
-  d <- rep(1,n)/m
-  D <- diag(d)
-  theta <- OLSE(X,y,d,m,mu,n)
-  sigma <- estimate_sigma(X,y,D,m,n,theta,mu)
-  res <- estimate_m(X,y,theta,sigma,n,p,mu)
-  m <- res$m
-  D <- diag(res$d)
-  theta <- OLSE(X,y,d,m,mu,n)
-  sigma <- estimate_sigma(X,y,D,m,n,theta,mu)
-  res <- estimate_m(X,y,theta,sigma,n,p,mu)
-  m <- res$m
-  d <- res$d
-  D <- diag(d)
-  sm <- n*log(p) + sum(m-rep(1,n))*log(1-p) - n*log(sigma) - 0.5*sum(log(m))
-  y <- y - X%*%theta - rep(mu,n)*m
-  sm <- sm - ((t(y)%*%D%*%y))/(2*(sigma^2))
+ll <- function(X,y,theta,mu,sigma,p,m,d,l,n) {
+  sm <- n*log(p) + (sum(m)-n)*log(1-p) - n*log(sigma) - 0.5*sum(l)
+  a <- y - X%*%theta
+  aa <- sum(a*a*d) - 2*sum(a*rep(mu,n)) + sum(m*rep(mu^2, n)) 
+  sm <- sm - aa/(2*(sigma^2))
   return(sm)
+}
+
+log_likelihood <- function(X,y,theta,p,mu,n){
+  m <- rgeom(n,p)+1
+  d <- rep(1,n)/m
+  for(i in 1:5){
+    theta <- OLSE(X,y,d,m,mu,n)
+    sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
+    res <- estimate_m(X,y,theta,sigma,n,p,mu)
+    m <- res$m
+    d <- res$d
+    l<-res$l
+  }
+  #m <- res$m
+  #d <- res$d
+  return(ll(X,y,theta,mu,sigma,p,m,d,l,n))
 }
 
 initial_estimate<-function(X,y,n){
@@ -120,27 +120,24 @@ initial_estimate<-function(X,y,n){
   z <- y-X%*%theta_full[1:p+1]
   p_r <- seq(0.06,0.9,by=0.01)
   mu_r <- rep(theta_full[1],85)*p_r
-  prd <- predict.glmnet(res,X)
   ll <- rep(0,85)
   for(i in 1:85){
     ll[i] <- log_likelihood(X,y,theta_full[1:p+1],p_r[i],mu_r[i],n)
   }
-  print(ll)
+  #print(ll)
   i <- which.max(ll)
   p <- p_r[i]
   mu <- mu_r[i]
   m <- rgeom(n,p)+1
   d <- 1/m
-  D <- diag(d)
   theta <- OLSE(X,y,d,m,mu,n)
-  sigma <- estimate_sigma(X,y,D,m,n,theta,mu)
+  sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
   res <- estimate_m(X,y,theta,sigma,n,p,mu)
   m <- res$m
   d <- res$d
-  D <- diag(d)
   theta <- OLSE(X,y,d,m,mu,n)
-  sigma <- estimate_sigma(X,y,D,m,n,theta,mu)
-  x <- list("mu"=mu, "theta"=theta, "sigma"=sigma, "p"=p, "m"=m, "z"=z)
+  sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
+  x <- list("mu"=mu, "theta"=theta, "sigma"=sigma, "p"=p, "m"=m, "z"=z, "ll"=ll)
   return(x)
 }
 
@@ -177,10 +174,9 @@ initial_estimate2<-function(X,y,mu,n,mact) {
   print(sum(comp[,5]*comp[,5]))
   print(skewness(y))
   m <- mg
-  D = 1/m
-  theta_hat <- OLSE(X,y,D,m,mu,n)
-  D=diag(D)
-  sigma_hat <- estimate_sigma(X,y,D,m,n,theta_hat,mu)
+  d = 1/m
+  theta_hat <- OLSE(X,y,d,m,mu,n)
+  sigma_hat <- estimate_sigma(X,y,d,m,n,theta_hat,mu)
   p_hat <- estimate_p(n, sum(m))
   x <- list("theta"=theta_hat, "sigma"=sigma_hat, "p"=p_hat)
   return(x)
@@ -192,7 +188,7 @@ theta <- c(c(1.5,5,3,2,-0.5), rep(0,p-5))
 mu<-10
 sigma<-1
 simu<-10
-g_p<-0.3
+g_p<-0.8
 iters<-1000
 burnin<-200
 fres <- matrix(0,nrow=simu,ncol=p+3)
@@ -219,16 +215,11 @@ for(kk in 1:simu){
   mu_hat <- res$mu
   sigma_hat <- res$sigma
   p_hat <- res$p
-  D <- diag(n)
   estt <- matrix(0,nrow=iters-burnin, ncol=p+3)
   for(i in 1:iters){
-    print(theta_hat[1:5])
     res <- estimate_m(X,y,theta_hat,sigma_hat,n,p_hat,mu_hat)
     m <- res$m 
     d <- res$d
-    for(j in 1:n){
-      D[j,j] <- d[j]
-    }
     # if(i<100) {
     #   mp <- estimate_m_conf(X,y,theta_hat,sigma_hat,n,p_hat, mu_hat,n)
     #   idx <- order(mp)[51:100]
@@ -243,7 +234,7 @@ for(kk in 1:simu){
     theta_hat <- OLSE(X,y,d,m,mu_hat,n)
     p_hat     <- estimate_p(n, sum(m))
     mu_hat    <- estimate_mu(y,X,theta_hat,m)
-    sigma_hat <- estimate_sigma(X,y,D,m,n,theta_hat,mu_hat)
+    sigma_hat <- estimate_sigma(X,y,d,m,n,theta_hat,mu_hat)
     if(i>burnin){
       estt[i-burnin,] <- c(p_hat, sigma_hat, mu_hat,theta_hat)
     }
@@ -252,16 +243,11 @@ for(kk in 1:simu){
   print(fres[kk,1:10])
 }
 print(fres)
-rat <- rep(0,simu)
-for(i in 1:simu) {
-  rat[i]<-fres[i,2]/sqrt(fres[i,1])
-}
 print(apply(fres, 2, mean))
 print(apply(fres, 2, sd))
 
-print(mean(rat))
-print(sd(rat))
-print(1/sqrt(g_p))
-
 file_str<-sprintf("symGSN_mu_em_glmnet_mu=%f_p=%f_sigma=%f.rds",mu,g_p,sigma)
 saveRDS(fres, file_str)
+# 
+# res<-initial_estimate(X,y,n)
+# plot(res$ll)

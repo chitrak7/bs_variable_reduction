@@ -111,8 +111,8 @@ for(kk in 1:simu){
     y[i] = t[i] + rnorm(1,0, sqrt(m[i])*sigma)
   }
   
-
-  D = diag(n)
+  d <- sample(1:5, n, replace=TRUE)
+  D = diag(d)
   theta_hat <- OLSE(X,y,D)
   p_hat <- 0.5
   sigma_hat <- estimate_sigma(X,y,D,n,theta_hat)

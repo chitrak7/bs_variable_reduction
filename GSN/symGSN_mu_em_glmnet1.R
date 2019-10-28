@@ -4,27 +4,20 @@ library(MASS)
 library(glmnet)
 library(R.utils)
 
-p<-200
+p<-20
 
 OLSE1 <- function(X, y) {
-  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==1),alpha=1)
-  lambda_min <- res$lambda.min
-  res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda = lambda_min, alpha=1)
+    res <- cv.glmnet(X, y, family="gaussian",intercept=(1==1),alpha=1)
+    lambda_min <- res$lambda.min
+    res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda = lambda_min, alpha=1)
   return(res)
-}
-
-OLSE2 <- function(X, y) {
-  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),alpha=0)
-  lambda_min <- res$lambda.min
-  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=0)
-  beta <- as.numeric(coef(res))
-  return(beta[1:p+1])
 }
 
 OLSE <- function(X, y,d,m,mu,n) {
   y <- y*sqrt(d)
   X <- X*sqrt(d)
   y <- y - rep(mu,n)*(1/sqrt(d))
+  
   res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),alpha=1)
   lambda_min <- res$lambda.min
   res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=1)
@@ -91,6 +84,8 @@ estimate_m<-function(X,y,theta,var,n,p,mu){
 }
 
 ll <- function(X,y,theta,mu,sigma,p,m,d,l,n) {
+  print(c(p,mu,sigma))
+  print(theta[1:5])
   sm <- n*log(p) + (sum(m)-n)*log(1-p) - n*log(sigma) - 0.5*sum(l)
   a <- y - X%*%theta
   aa <- sum(a*a*d) - 2*sum(a*rep(mu,n)) + sum(m*rep(mu^2, n)) 
@@ -99,9 +94,11 @@ ll <- function(X,y,theta,mu,sigma,p,m,d,l,n) {
 }
 
 log_likelihood <- function(X,y,theta,p,mu,n){
-  m <- rgeom(n,p)+1
-  d <- rep(1,n)/m
-  for(i in 1:5){
+  sigma <- sqrt(sum((y-X%*%theta)^2)/n)
+  res <- estimate_m(X,y,theta,sigma,n,p,mu)
+  m<-res$m
+  d<-res$d
+  for(i in 1:100){
     theta <- OLSE(X,y,d,m,mu,n)
     sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
     res <- estimate_m(X,y,theta,sigma,n,p,mu)
@@ -109,7 +106,7 @@ log_likelihood <- function(X,y,theta,p,mu,n){
     d <- res$d
     l<-res$l
   }
-  #m <- res$m
+  #m <- res$mre
   #d <- res$d
   return(ll(X,y,theta,mu,sigma,p,m,d,l,n))
 }
@@ -117,27 +114,33 @@ log_likelihood <- function(X,y,theta,p,mu,n){
 initial_estimate<-function(X,y,n){
   res <- OLSE1(X,y)
   theta_full <- as.numeric(coef(res))
+  print(theta_full[1])
   z <- y-X%*%theta_full[1:p+1]
-  p_r <- seq(0.06,0.9,by=0.01)
-  mu_r <- rep(theta_full[1],85)*p_r
-  ll <- rep(0,85)
-  for(i in 1:85){
+  p_r <- seq(0.05,0.9,by=0.05)
+  mu_r <- rep(theta_full[1],18)*p_r
+  ll <- rep(0,18)
+  for(i in 1:18){
     ll[i] <- log_likelihood(X,y,theta_full[1:p+1],p_r[i],mu_r[i],n)
   }
   #print(ll)
   i <- which.max(ll)
+  theta <-theta_full[1:p+1]
   p <- p_r[i]
   mu <- mu_r[i]
-  m <- rgeom(n,p)+1
-  d <- 1/m
-  theta <- OLSE(X,y,d,m,mu,n)
-  sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
+  
+  sigma <- sqrt(sum((y-X%*%theta)^2)/n)
   res <- estimate_m(X,y,theta,sigma,n,p,mu)
-  m <- res$m
-  d <- res$d
-  theta <- OLSE(X,y,d,m,mu,n)
-  sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
-  x <- list("mu"=mu, "theta"=theta, "sigma"=sigma, "p"=p, "m"=m, "z"=z, "ll"=ll)
+  m<-res$m
+  d<-res$d
+  for(i in 1:100){
+    theta <- OLSE(X,y,d,m,mu,n)
+    sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
+    res <- estimate_m(X,y,theta,sigma,n,p,mu)
+    m <- res$m
+    d <- res$d
+    l<-res$l
+  }
+  x <- list("mu"=mu, "theta"=theta, "sigma"=sigma, "p"=p, "m"=m, "ll"=ll)
   return(x)
 }
 
@@ -188,7 +191,7 @@ theta <- c(c(1.5,5,3,2,-0.5), rep(0,p-5))
 mu<-10
 sigma<-1
 simu<-10
-g_p<-0.8
+g_p<-0.5
 iters<-1000
 burnin<-200
 fres <- matrix(0,nrow=simu,ncol=p+3)
@@ -201,7 +204,7 @@ for(kk in 1:simu){
   for(i in 1:p)
   {                                   
     # X[i+1,]=rnorm(n,i,2)    #Normalize X so that E(X)=0 and comptation for the intercept is stable;
-    X[i,]<-rnorm(n,0,2)
+    X[i,]<-rnorm(n,2,2)
   }
   X <- t(X)
   t<-X%*%theta

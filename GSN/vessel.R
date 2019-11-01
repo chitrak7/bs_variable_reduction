@@ -3,34 +3,29 @@ library(matlib)
 library(MASS)
 library(glmnet)
 library(R.utils)
+library(lars)
+library(R.matlab)
 
-p<-120
+p<-486
 
 OLSE1 <- function(X, y) {
-  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==1),alpha=1)
-  lambda_min <- res$lambda.min
-  res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda = lambda_min, alpha=1)
-  # res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda = 0, alpha=1)
+    res <- cv.glmnet(X, y, family="gaussian",intercept=(1==1),alpha=1)
+    lambda_min <- res$lambda.min
+    res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda =lambda_min, alpha=1)
   return(res)
 }
 
-OLSE2 <- function(X, y) {
-  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),alpha=0)
-  lambda_min <- res$lambda.min
-  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=0)
-  beta <- as.numeric(coef(res))
-  return(beta[1:p+1])
-}
-
 OLSE <- function(X, y,d,m,mu,n) {
-  y <- y*sqrt(d)
-  X <- X*sqrt(d)
-  y <- y - rep(mu,n)*(1/sqrt(d))
-  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),alpha=1)
+  y <- y
+  X <- X
+  y <- y - rep(mu,n)/d
+  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),alpha=1,weights = d)
   lambda_min <- res$lambda.min
-  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=1)
-  # res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = 0, alpha=1)
-  beta <- as.numeric(coef(res))
+  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=1, weights = d)
+  beta <- coef(res)
+  # res<-lars(X,y,intercept = FALSE)
+  #return(res)
+  #return(coef.lars(res)[length(coef.lars(res)[,1]),])
   return(beta[1:p+1])
 }
 
@@ -45,8 +40,8 @@ estimate_mu <- function(y, X, theta, m) {
 
 estimate_sigma <-function(X,y,d,m,n,theta_est,mu) {
   a <- y - X%*%theta_est 
-  res <- a*a*d - 2*a*rep(mu,n) + m*rep(mu^2, n)
-  return(sqrt(sum(res)/n))
+  res <- sum(a*a*d) - 2*sum(a*rep(mu,n)) + sum(m*rep(mu^2, n)) 
+  return(sqrt(res/n))
 }
 
 estimate_m_conf <- function(X,y,theta,var,n,p,mu,m) {
@@ -61,8 +56,7 @@ estimate_m_mm<-function(X,y,theta,var,n,p,mu){
   m <- rep(0,n)
   rng <- 1:mx
   rng_sqrt <- sqrt(rng)
-  p_arr <- (1-p)^(rng-1)
-  y <- y - t
+  y <- y - 
   for(i in 1:n){
     dist <- dnorm(y[i], rep(mu,mx)*rng, rng_sqrt*rep(var,mx))
     #print(dist*p_arr)
@@ -93,39 +87,30 @@ estimate_m<-function(X,y,theta,var,n,p,mu){
 }
 
 ll <- function(X,y,theta,mu,sigma,p,m,d,l,n) {
-  
   sm <- n*log(p) + (sum(m)-n)*log(1-p) - n*log(sigma) - 0.5*sum(l)
   a <- y - X%*%theta
   aa <- sum(a*a*d) - 2*sum(a*rep(mu,n)) + sum(m*rep(mu^2, n)) 
   sm <- sm - aa/(2*(sigma^2))
-  print(c(p,mu,sigma,aa/(2*(sigma^2))))
-  return(aa)
+  print(c(p,sm))
+  return(sm)
 }
 
 log_likelihood <- function(X,y,theta,p,mu,n){
   sigma <- 1
-  #print(y)
   res <- estimate_m(X,y,theta,sigma,n,p,mu)
-  m <- res$m
-  d <- res$d
-  m[!is.finite(m)]<-1/p
+  m<-res$m
+  d<-res$d
   d[!is.finite(d)]<-p
   for(i in 1:50){
     theta <- OLSE(X,y,d,m,mu,n)
-    if(i>20){
-      sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
-      mu<-estimate_mu(y,X,theta,m)
-      p<-estimate_p(n,sum(m))
-    }
+    sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
     res <- estimate_m(X,y,theta,sigma,n,p,mu)
     m <- res$m
     d <- res$d
-    
-    m[!is.finite(m)]<-1/p
     d[!is.finite(d)]<-p
     l<-res$l
   }
-  #m <- res$m
+  #m <- res$mre
   #d <- res$d
   return(ll(X,y,theta,mu,sigma,p,m,d,l,n))
 }
@@ -133,48 +118,38 @@ log_likelihood <- function(X,y,theta,p,mu,n){
 initial_estimate<-function(X,y,n){
   res <- OLSE1(X,y)
   theta_full <- as.numeric(coef(res))
+  print(theta_full[1])
   z <- y-X%*%theta_full[1:p+1]
-  p_r <- seq(0.05,0.8,by=0.05)
-  mu_r <- rep(theta_full[1],16)*p_r
-  ll <- rep(0,16)
-  for(i in 1:16){
+  p_r <- seq(0.05,0.9,by=0.05)
+  mu_r <- rep(theta_full[1],18)*p_r
+  ll <- rep(0,18)
+  for(i in 1:18){
     ll[i] <- log_likelihood(X,y,theta_full[1:p+1],p_r[i],mu_r[i],n)
-    print(ll[i])
   }
   #print(ll)
   i <- which.max(ll)
-  theta<-theta_full[1:p+1]
+  theta <-theta_full[1:p+1]
   p <- p_r[i]
   mu <- mu_r[i]
-  # m <- rgeom(n,p)+1
-  # d <- 1/m
-  # theta <- OLSE(X,y,d,m,mu,n)
-  # #sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
-  # res <- estimate_m(X,y,theta,sigma,n,p,mu)
-  # m <- res$m
-  # d <- res$d
-  # theta <- OLSE(X,y,d,m,mu,n)
-  # #sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
+  # # 
+  # p<-0.3
+  # mu<-theta_full[1]*0.3
   sigma <- 1
-  #print(y)
   res <- estimate_m(X,y,theta,sigma,n,p,mu)
-  m <- res$m
-  d <- res$d
-  m[!is.finite(m)]<-1/p
+  m<-res$m
+  d<-res$d
   d[!is.finite(d)]<-p
   for(i in 1:50){
     theta <- OLSE(X,y,d,m,mu,n)
-    if(i>20)
-      sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
+    #sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
     res <- estimate_m(X,y,theta,sigma,n,p,mu)
     m <- res$m
     d <- res$d
+    d[!is.finite(d)]<-p
     l<-res$l
   }
-  #m <- res$m
-  #d <- res$d
-  #return(ll(X,y,theta,mu,sigma,p,m,d,l,n))
-  x <- list("mu"=mu, "theta"=theta, "sigma"=sigma, "p"=p, "m"=m, "z"=z, "ll"=ll)
+  x <- list("mu"=mu, "theta"=theta, "sigma"=sigma, "p"=p, "m"=m, "ll"=ll)
+  print(x)
   return(x)
 }
 
@@ -219,34 +194,23 @@ initial_estimate2<-function(X,y,mu,n,mact) {
   return(x)
 }
 
-n <- 100
+n <- 180
 crvalue <- 3
 theta <- c(c(1.5,5,3,2,-0.5), rep(0,p-5))
-mu<-10
+mu<-1
 sigma<-1
-simu<-10
-g_p<-0.3
-iters<-1000
-burnin<-200
+simu<-100
+g_p<-0.5
+iters<-200
+burnin<-40
 fres <- matrix(0,nrow=simu,ncol=p+3)
 
 for(kk in 1:simu){
   print(kk)
   set.seed(kk)
-  m <-rgeom(n,g_p) +1
-  X<-matrix(nrow = p, ncol = n)      #generate X
-  for(i in 1:p)
-  {                                   
-    # X[i+1,]=rnorm(n,i,2)    #Normalize X so that E(X)=0 and comptation for the intercept is stable;
-    X[i,]<-rnorm(n,0,2)
-  }
-  X <- t(X)
-  t<-X%*%theta
-  y <- rep(1,n)
-  for(i in 1:n){
-    y[i] <- t[i] + rnorm(1,mu*m[i], sqrt(m[i])*sigma)
-  }
-  
+  m <-readMat('VesselData.mat')
+  X<-m$Xdata[,15:500]
+  y<-m$Ydata[,11]
   res <- initial_estimate(X,y,n)
   theta_hat <- res$theta
   mu_hat <- res$mu
@@ -254,7 +218,7 @@ for(kk in 1:simu){
   p_hat <- res$p
   estt <- matrix(0,nrow=iters-burnin, ncol=p+3)
   for(i in 1:iters){
-    print(c(p_hat, sigma_hat, mu_hat,theta_hat[1:5]))
+    
     res <- estimate_m(X,y,theta_hat,sigma_hat,n,p_hat,mu_hat)
     m <- res$m 
     d <- res$d
@@ -269,10 +233,12 @@ for(kk in 1:simu){
     # }else {
     # }
     
+    # print(c(mu_hat,p_hat,theta_hat[1:10]))
     theta_hat <- OLSE(X,y,d,m,mu_hat,n)
     p_hat     <- estimate_p(n, sum(m))
     mu_hat    <- estimate_mu(y,X,theta_hat,m)
     sigma_hat <- estimate_sigma(X,y,d,m,n,theta_hat,mu_hat)
+    
     if(i>burnin){
       estt[i-burnin,] <- c(p_hat, sigma_hat, mu_hat,theta_hat)
     }

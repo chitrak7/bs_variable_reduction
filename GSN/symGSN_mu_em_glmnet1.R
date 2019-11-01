@@ -3,25 +3,28 @@ library(matlib)
 library(MASS)
 library(glmnet)
 library(R.utils)
+library(lars)
 
-p<-20
+p<-120
 
 OLSE1 <- function(X, y) {
     res <- cv.glmnet(X, y, family="gaussian",intercept=(1==1),alpha=1)
     lambda_min <- res$lambda.min
-    res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda = lambda_min, alpha=1)
+    res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda =lambda_min, alpha=1)
   return(res)
 }
 
 OLSE <- function(X, y,d,m,mu,n) {
-  y <- y*sqrt(d)
-  X <- X*sqrt(d)
-  y <- y - rep(mu,n)*(1/sqrt(d))
-  
-  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),alpha=1)
+  y <- y
+  X <- X
+  y <- y - rep(mu,n)/d
+  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),alpha=1,weights = d)
   lambda_min <- res$lambda.min
-  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=1)
-  beta <- as.numeric(coef(res))
+  res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=1, weights = d)
+  beta <- coef(res)
+  # res<-lars(X,y,intercept = FALSE)
+  #return(res)
+  #return(coef.lars(res)[length(coef.lars(res)[,1]),])
   return(beta[1:p+1])
 }
 
@@ -52,8 +55,7 @@ estimate_m_mm<-function(X,y,theta,var,n,p,mu){
   m <- rep(0,n)
   rng <- 1:mx
   rng_sqrt <- sqrt(rng)
-  p_arr <- (1-p)^(rng-1)
-  y <- y - t
+  y <- y - 
   for(i in 1:n){
     dist <- dnorm(y[i], rep(mu,mx)*rng, rng_sqrt*rep(var,mx))
     #print(dist*p_arr)
@@ -80,30 +82,31 @@ estimate_m<-function(X,y,theta,var,n,p,mu){
     d[i] <- sum((p_arr*dist)/rng)/sum(p_arr*dist)
     l[i] <- sum((p_arr*dist)*log(rng))/sum(p_arr*dist)
   }
-  return(list("m"=m,"d"=d))
+  return(list("m"=m,"d"=d,"l"=l))
 }
 
 ll <- function(X,y,theta,mu,sigma,p,m,d,l,n) {
-  print(c(p,mu,sigma))
-  print(theta[1:5])
   sm <- n*log(p) + (sum(m)-n)*log(1-p) - n*log(sigma) - 0.5*sum(l)
   a <- y - X%*%theta
   aa <- sum(a*a*d) - 2*sum(a*rep(mu,n)) + sum(m*rep(mu^2, n)) 
   sm <- sm - aa/(2*(sigma^2))
+  #print(c(sm,p,mu,sigma,theta[1:10]))
   return(sm)
 }
 
 log_likelihood <- function(X,y,theta,p,mu,n){
-  sigma <- sqrt(sum((y-X%*%theta)^2)/n)
+  sigma <- 1
   res <- estimate_m(X,y,theta,sigma,n,p,mu)
   m<-res$m
   d<-res$d
-  for(i in 1:100){
+  d[!is.finite(d)]<-p
+  for(i in 1:50){
     theta <- OLSE(X,y,d,m,mu,n)
     sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
     res <- estimate_m(X,y,theta,sigma,n,p,mu)
     m <- res$m
     d <- res$d
+    d[!is.finite(d)]<-p
     l<-res$l
   }
   #m <- res$mre
@@ -127,20 +130,23 @@ initial_estimate<-function(X,y,n){
   theta <-theta_full[1:p+1]
   p <- p_r[i]
   mu <- mu_r[i]
-  
-  sigma <- sqrt(sum((y-X%*%theta)^2)/n)
+  # 
+  # p<-0.3
+  # mu<-theta_full[1]*0.3
+  sigma <- 1
   res <- estimate_m(X,y,theta,sigma,n,p,mu)
   m<-res$m
   d<-res$d
-  for(i in 1:100){
+  for(i in 1:50){
     theta <- OLSE(X,y,d,m,mu,n)
-    sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
+    #sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
     res <- estimate_m(X,y,theta,sigma,n,p,mu)
     m <- res$m
     d <- res$d
     l<-res$l
   }
   x <- list("mu"=mu, "theta"=theta, "sigma"=sigma, "p"=p, "m"=m, "ll"=ll)
+  print(x)
   return(x)
 }
 
@@ -188,12 +194,12 @@ initial_estimate2<-function(X,y,mu,n,mact) {
 n <- 100
 crvalue <- 3
 theta <- c(c(1.5,5,3,2,-0.5), rep(0,p-5))
-mu<-10
+mu<-3
 sigma<-1
-simu<-10
-g_p<-0.5
-iters<-1000
-burnin<-200
+simu<-100
+g_p<-0.3
+iters<-200
+burnin<-40
 fres <- matrix(0,nrow=simu,ncol=p+3)
 
 for(kk in 1:simu){
@@ -204,7 +210,7 @@ for(kk in 1:simu){
   for(i in 1:p)
   {                                   
     # X[i+1,]=rnorm(n,i,2)    #Normalize X so that E(X)=0 and comptation for the intercept is stable;
-    X[i,]<-rnorm(n,2,2)
+    X[i,]<-rnorm(n,0,2)
   }
   X <- t(X)
   t<-X%*%theta
@@ -220,6 +226,7 @@ for(kk in 1:simu){
   p_hat <- res$p
   estt <- matrix(0,nrow=iters-burnin, ncol=p+3)
   for(i in 1:iters){
+    
     res <- estimate_m(X,y,theta_hat,sigma_hat,n,p_hat,mu_hat)
     m <- res$m 
     d <- res$d
@@ -234,10 +241,12 @@ for(kk in 1:simu){
     # }else {
     # }
     
+    # print(c(mu_hat,p_hat,theta_hat[1:10]))
     theta_hat <- OLSE(X,y,d,m,mu_hat,n)
     p_hat     <- estimate_p(n, sum(m))
     mu_hat    <- estimate_mu(y,X,theta_hat,m)
     sigma_hat <- estimate_sigma(X,y,d,m,n,theta_hat,mu_hat)
+    
     if(i>burnin){
       estt[i-burnin,] <- c(p_hat, sigma_hat, mu_hat,theta_hat)
     }

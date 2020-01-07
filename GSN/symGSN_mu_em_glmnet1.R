@@ -5,7 +5,7 @@ crvalue <- 3
 theta <- c(c(1.5,5,3,2,-0.5), rep(0,p-5))
 args<-commandArgs(trailingOnly = TRUE)
 args <- as.numeric(args)
-args<-c(1,1,0.5,1)
+args<-c(1,1,0.95,1.0)
 mu=args[1]
 sigma=args[2]
 g_p=args[3]
@@ -18,7 +18,7 @@ mes = sprintf("symGSN with em and glmnet for mu=%f, p=%f, sigma=%f, alpha=%f",mu
 print(mes)
 
 library(matlib)
-library(MASS)
+library(MASS) 
 library(glmnet)
 library(doParallel)
 library(moments)
@@ -63,7 +63,7 @@ OLSE <- function(X, y,d,m,mu,n) {
   y <- y*sqrt(d)
   X <- X*sqrt(d)
   y <- y - rep(mu,n)*(1/sqrt(d))
-  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),alpha=1)
+  res <- cv.glmnet(X, y, family="gaussian",intercept=(1==0),alpha=alpha_s)
   lambda_min <- res$lambda.min
   res <- glmnet(X, y, family = "gaussian",intercept=(1==0), lambda = lambda_min, alpha=alpha_s)
   beta <- as.numeric(coef(res))
@@ -73,7 +73,7 @@ OLSE <- function(X, y,d,m,mu,n) {
 OLSE1 <- function(X, y) {
   res <- cv.glmnet(X, y, family="gaussian",intercept=(1==1),alpha=1)
   lambda_min <- res$lambda.min
-  res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda = lambda_min, alpha=alpha_s)
+  res <- glmnet(X, y, family = "gaussian",intercept=(1==1), lambda = lambda_min, alpha=1)
   return(res)
 }
 # Calculates expected log-likelihood
@@ -134,6 +134,7 @@ initial_estimate<-function(X,y,n){
 
 rsimu <- function(kk){
   set.seed(kk)
+  print(kk)
   m <-rgeom(n,g_p) +1
   X<-matrix(nrow = p, ncol = n)      #generate X
   for(i in 1:p)
@@ -185,5 +186,5 @@ stopCluster(cl)
 fres <- matrix(unlist(fres), nrow=simu, byrow = TRUE)
 print(apply(fres, 2, mean))
 print(apply(fres, 2, sd))
-file_str<-sprintf("symGSN_mu_em_glmnet_mu=%f_p=%f_sigma=%f.rds",mu,g_p,sigma)
+file_str<-sprintf("symGSN_mu_em_glmnet_mu=%f_p=%f_sigma=%f_alpha=%f.rds",mu,g_p,sigma,alpha_s)
 saveRDS(fres, file_str)

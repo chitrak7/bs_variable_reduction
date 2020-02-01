@@ -5,16 +5,16 @@ crvalue <- 3
 theta <- c(c(1.5,5,3,2,-0.5), rep(0,p-5))
 args<-commandArgs(trailingOnly = TRUE)
 args <- as.numeric(args)
-args<-c(1,1,0.95,1.0)
+args<-c(2,0.4,0.6,1.0)
 mu=args[1]
 sigma=args[2]
 g_p=args[3]
 alpha_s=args[4]
-simu<-1000
+simu<-10
 iters<-200
 burnin<-40
 
-mes = sprintf("symGSN with em and glmnet for mu=%f, p=%f, sigma=%f, alpha=%f",mu,g_p,sigma,alpha_s)
+mes = sprintf("symGSN with em and glmnet for mu=%f, p=%f, sigma=%f, alpha=%f, n=%f",mu,g_p,sigma,alpha_s,n)
 print(mes)
 
 library(matlib)
@@ -54,9 +54,13 @@ estimate_mu <- function(y, X, theta, m) {
 }
 # M-step for sigma
 estimate_sigma <-function(X,y,d,m,n,theta_est,mu) {
+  #m<-round(m)
   a <- y - X%*%theta_est 
-  res <- sum(a*a*d) - 2*sum(a*rep(mu,n)) + sum(m*rep(mu^2, n)) 
-  return(sqrt(res/n))
+  res <- sum((a*a*d) - 2*(a*rep(mu,n)) + (m*rep(mu^2, n)))
+  #q1 <- quantile(res, 0.1)
+  #q2 <- quantile(res, 0.9)
+  #res <- sum(res[which(res<q2&res>q1)])
+  return(sqrt(res/(n)))
 }
 # M-step for theta
 OLSE <- function(X, y,d,m,mu,n) {
@@ -96,6 +100,14 @@ ll2 <- function(X,y,theta,mu,sigma,p,m,n) {
 log_likelihood <- function(X,y,theta,p,mu,n){
   sigma <- sqrt(sum((y-X%*%theta)^2)*(p/n))
   #print(sigma)
+  res <- estimate_m(X,y,theta,sigma,n,p,mu)
+  m <- res$m 
+  d <- res$d
+  l <- res$l
+  theta <- OLSE(X,y,d,m,mu_hat,n)
+  p     <- estimate_p(n, sum(m))
+  mu    <- estimate_mu(y,X,theta,m)
+  sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
   z<- (y - X%*%theta)
   pos=0
   mg = rep(0,n)
@@ -115,19 +127,25 @@ initial_estimate<-function(X,y,n){
   #print("ok1")
   z <- y-X%*%theta_full[1:p+1]
   #print("ok2")
-  p_r <- seq(0.06,0.9,by=0.01)
-  mu_r <- rep(theta_full[1],85)*p_r
-  ll <- rep(0,85)
-  for(i in 1:85){
+  p_r <- seq(0.05,0.9,by=0.05)
+  mu_r <- rep(theta_full[1],18)*p_r
+  ll <- rep(0,18)
+  for(i in 1:18){
     ll[i] <- log_likelihood(X,y,theta_full[1:p+1],p_r[i],mu_r[i],n)
   }
-  #print(ll)
+  print(ll)
   #print("ok3")
-  i <- which.max(ll)
+  #print(sigma)
   theta <- theta_full[1:p+1]
-  p <- p_r[i]
-  mu <- mu_r[i]
-  sigma <- sqrt(sum(z^2)*(p/n))
+  p <- p_r[which.max(ll)]
+  mu <- mu_r[which.max(ll)]
+  sigma <- sqrt(sum((y-X%*%theta)^2)*(p/n))
+  res <- estimate_m(X,y,theta,sigma,n,p,mu)
+  m <- res$m 
+  d <- res$d
+  l <- res$l
+  theta <- OLSE(X,y,d,m,mu_hat,n)
+  sigma <- estimate_sigma(X,y,d,m,n,theta,mu)
   x <- list("mu"=mu, "theta"=theta, "sigma"=sigma, "p"=p)
   return(x)
 }
@@ -140,7 +158,7 @@ rsimu <- function(kk){
   for(i in 1:p)
   {                                   
     # X[i+1,]=rnorm(n,i,2)    #Normalize X so that E(X)=0 and comptation for the intercept is stable;
-    X[i,]<-rnorm(n,0,2)
+    X[i,]<-rnorm(n,0,5)
   }
   X <- t(X)
   t<-X%*%theta
@@ -149,6 +167,7 @@ rsimu <- function(kk){
     y[i] <- t[i] + rnorm(1,mu*m[i], sqrt(m[i])*sigma)
   }
   res <- initial_estimate(X,y,n)
+  print(res$sigma)
   theta_hat <- res$theta
   mu_hat <- res$mu
   sigma_hat <- res$sigma 
@@ -171,9 +190,10 @@ rsimu <- function(kk){
   Pzero=apply(estt,2,nnzero)/(iters-burnin)
   zvalue=(Pzero-0.5)*(iters-burnin)/0.5
   pvalue=pnorm(zvalue)
+  print(p_hat)
   adj.pv=p.adjust(pvalue, "BH")    #Control false discovery rate;
   estt[,which(adj.pv<=0.05)] <- 0
-  f<-apply(estt,2,sum)/(iters-burnin)
+  f<-apply(estt,2,mean)
   return(f)
 }
 
@@ -186,5 +206,32 @@ stopCluster(cl)
 fres <- matrix(unlist(fres), nrow=simu, byrow = TRUE)
 print(apply(fres, 2, mean))
 print(apply(fres, 2, sd))
-file_str<-sprintf("symGSN_mu_em_glmnet_mu=%f_p=%f_sigma=%f_alpha=%f.rds",mu,g_p,sigma,alpha_s)
-saveRDS(fres, file_str)
+# file_str<-sprintf("symGSN_mu_em_glmnet_mu=%f_p=%f_sigma=%f_alpha=%f_n=%f.rds",mu,g_p,sigma,alpha_s,n)
+# saveRDS(fres, file_str)
+# 
+# p<-200
+# n <- 150
+# crvalue <- 3
+# theta <- c(c(1.5,5,3,2,-0.5), rep(0,p-5))
+# args<-commandArgs(trailingOnly = TRUE)
+# args <- as.numeric(args)
+# args<-c(2,0.4,0.6,0.8)
+# mu=args[1]
+# sigma=args[2]
+# g_p=args[3]
+# alpha_s=args[4]
+# simu<-1000
+# iters<-200
+# burnin<-40
+# 
+# nc <- detectCores()-1
+# cl <- makeCluster(nc)
+# st <- Sys.time()
+# fres <- foreach(kk=1:simu, .packages = c('glmnet','matlib','MASS')) %dopar% rsimu(kk)
+# print(Sys.time()-st)
+# stopCluster(cl)
+# fres <- matrix(unlist(fres), nrow=simu, byrow = TRUE)
+# print(apply(fres, 2, mean))
+# print(apply(fres, 2, sd))
+# file_str<-sprintf("symGSN_mu_em_glmnet_mu=%f_p=%f_sigma=%f_alpha=%f_n=%f.rds",mu,g_p,sigma,alpha_s,n)
+# saveRDS(fres, file_str)
